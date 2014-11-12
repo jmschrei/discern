@@ -36,7 +36,7 @@ class DISCERN( object ):
 	different neighbors in the GGM.
 	'''
 
-	def __init__( self, l=0.3, alpha=0.95 ):
+	def __init__( self ):
 		pass
 
 	def fit_score( self, null_training, null_testing, alternate_training,
@@ -56,6 +56,12 @@ class DISCERN( object ):
 		else:
 			n_cores = n_cores or 1
 
+		# If lambda is specified as 'auto', determine the best lambda using the
+		# null training set.
+		if l in ['auto', 'Auto']:
+			l, sse = self.lambda_opt( null_training, names, mask, n_cores,
+				alpha=alpha )
+
 		# Assign a uniform true mask on the covariates by default
 		mask = mask or np.ones( null_training.shape[1] )
 
@@ -69,11 +75,11 @@ class DISCERN( object ):
 		ro.r( "registerDoParallel(cl)" )
 
 		# Scale all four data sets used independently of each other.
-		null_training = scale( null_training )
-		null_testing = scale( null_testing )
-		alternate_training = scale( alternate_training )
-		alternate_testing = scale( alternate_testing )
-
+		null_testing = ( null_testing - null_training.mean( axis=0 ) ) / null_training.std( axis=0 )
+		null_training = ( null_training - null_training.mean( axis=0 ) ) / null_training.std( axis=0 )
+		alternate_testing = ( alternate_testing - alternate_training.mean( axis=0 ) ) / alternate_training.std( axis=0 ) 
+		alternate_training = ( alternate_training - alternate_training.mean( axis=0) ) / alternate_training.std( axis=0 )
+ 
 		# Now we need to push the data we're working with to the R environment
 		ro.r.assign( "null_training", null_training )
 		ro.r.assign( "alternate_training", alternate_training )
@@ -90,10 +96,10 @@ class DISCERN( object ):
 		# error_ab is the error calculated using fit_a on X_b
 
 		ro.r( r"""
-		discern <- function( start, finish, lambda, alpha ) {
+		discern <- function( lambda, alpha ) {
 			clusterExport( cl, c("null_testing", "null_training", "alternate_testing", 
 				"alternate_training", "names", "mask" ))
-			results <- foreach( i=start:finish, .packages='glmnet' ) %dopar% {
+			results <- foreach( i=1:dim(null_training)[2], .packages='glmnet' ) %dopar% {
 				covariates <- mask
 				covariates[i] = F
 				name = names[[i]]
@@ -142,24 +148,11 @@ class DISCERN( object ):
 			return( results ) 
 		}""" )
 
-
-		print null_training.shape[1] 
-		scores = np.array( ro.r['discern']( 1, null_training.shape[1], l, alpha  ) )
+		scores = np.array( ro.r['discern']( l, alpha  ) )
 		self._scores = pd.DataFrame( scores, columns=['Feature', 'T2', 'T4'] )
-		self._scores = self._scores.convert_objects(convert_numeric=True)
 		self._scores.index = self._scores['Feature']
+		self._scores = self._scores.convert_objects(convert_numeric=True)
 		return self._scores
-
-	def fit_score_transform( self, null, alternate, names, mask=None, threshold=3., 
-		l=0., alpha=1.00, n_cores=None ):
-		'''
-		Return the original matrices having done feature selection, returning
-		only features which scored above the threshold. 
-		'''
-
-		self.fit_score( null, alternate, names, mask, n_cores )
-		features = self._scores[ self._scores['T4'] > threshold ]['Feature']
-		return null[ features ], alternate[ features ]
 
 	def lambda_opt( self, data, names, mask=None, n_cores=None,
 		nfolds=5, alpha=1.00, plot=False ):
@@ -202,8 +195,7 @@ class DISCERN( object ):
 		lambda_cv <- function() {
 			clusterExport( cl, c("data", "names", "mask", "alpha", "lambdas", "nfolds") )
 
-			#SSE <- foreach( i=1:dim(data)[2], .packages=c('glmnet', 'foreach', 'matrixStats'), .combine='+' ) %do% {
-			SSE <- foreach( i=1:1, .packages=c('glmnet', 'foreach', 'matrixStats'), .combine='+' ) %do% {
+			SSE <- foreach( i=1:dim(data)[2], .packages=c('glmnet', 'foreach', 'matrixStats'), .combine='+' ) %dopar% {
 				covariates <- mask
 				covariates[i] = F
 				name = names[[i]]
@@ -245,7 +237,6 @@ class DISCERN( object ):
 				return( errors )
  			}
 
- 			print( c(SSE, i) )
 			stopCluster(cl)
 			return( SSE )
 		}
@@ -341,6 +332,7 @@ class DISCERN( object ):
 
 		s = np.array(ro.r['sparsity_cv']())
 		s /= data.shape[1] ** 2
+		print s
 
 		plt.plot( lambdas, s, c='c', alpha=0.5, linewidth=2.5 )
 		plt.xscale('log')

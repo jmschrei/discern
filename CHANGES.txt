@@ -1,0 +1,1 @@
+11/12/14 v0.1.0 -- Initial commit of method. Allows for comparison of two networks, cross-validation selection of lambda, and transformation of the dataset if you wish to remove features which score below a certain threshold. 
