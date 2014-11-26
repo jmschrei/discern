@@ -262,25 +262,6 @@ def three_component_test( name="three_component"):
 
 	barchart( [discern, anova, lns], ['DISCERN', 'ANOVA', 'LNS'], node_names, name )
 
-def ROC( n, m, scores ):
-	'''
-	Calculate the Receiver-Operating Characteristic by looking at the top i scores
-	and determining false positives and false negatives.
-	'''
-
-	tp, fp = [], []
-	
-	tp = sum([ 1. if i < m and scores[i] > 0 else 0. for i in xrange(n) ])
-	fp = sum([ 1. if i > m and scores[i] > 0 else 0. for i in xrange(n) ])
-	tn = sum([ 1. if i > m and scores[i] == 0 else 0. for i in xrange(n) ])
-	fn = sum([ 1. if i < m and scores[i] == 0. else 0. for i in xrange(n) ])
-
-	tpr = tp / ( tp + fn ) if tp > 0 else 0
-	fpr = 1 - ( tn / ( fp + tn ) ) if tn > 0 else 1
-
-	print tpr, fpr
-	return tpr, fpr
-
 def DCG( relevance ):
 	'''
 	Calculates the Discounted Cumulative Gain of stuff.
@@ -385,8 +366,7 @@ def large_sparse_network( n=5000, m=50, low=1, high=10, name="large_sparse" ):
 
 	return scores, DCG_Matrix
 
-
-large_sparse_network( 7500, 100 )
+#large_sparse_network( 7500, 100 )
 #independent_no_perturbation_test() 
 #seven_star_tests()
 #three_component_test()
