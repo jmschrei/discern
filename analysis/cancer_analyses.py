@@ -74,56 +74,29 @@ def survival( expression, survival, outfile='CoxPH_p_vals.csv' ):
 	info = coxph_regression( gene_exp, survival_time, alive, n_cores=-1 )
 	info.to_csv( outfile )
 
-def aml_analysis():
+
+def analysis( null, cancer, l=0.05, name="analysis" ):
 	'''
-	Load up the AML data and pass it to the DISCERN methods.
-	'''
-
-	# Load up the data
-	null = pd.read_csv( 'AML\\AML1_normal.csv', index_col=0 ).T
-	cancer = pd.read_csv( 'AML\\AML1_cancer.csv', index_col=0 ).T
-
-	# Pull the gene names from the columns 
-	gene_names = null.columns
-
-	# Run the DISCERN analysis
-	run_discern( null, cancer, gene_names, 0.1, "DISCERN_AML.csv" )
-	run_anova( null, cancer, gene_names, "ANOVA_AML.csv" )
-	run_lns( null, cancer, gene_names, "LNS_AML.csv" )
-
-def brca_analysis():
-	'''
-	Load up the BRCA data and pass it to the DISCERN methods.
+	Load up a dataset and pass it to the DISCERN, ANOVA, and LUAD methods. Pass
+	in the filename to the csv file which contains the gene expression data for
+	the healthy and cancerous patients respectively. Also pass in a lambda value
+	for the run to be done at.
 	'''
 
 	# Load up the data
-	null = pd.read_csv( 'BRCA\BRCA_data_normal.csv', index_col=0 ).T
-	cancer = pd.read_csv( 'BRCA\BRCA_data_cancer_RESTRICTED.csv', index_col=0 ).T
+	null = pd.read_csv( null, index_col=0 ).T
+	cancer = pd.read_csv( cancer, index_col=0 ).T
 
-	# Pull the gene names from the columns 
+	# Ensure that the same genes are in both
+	assert set( null.columns ) == set( cancer.columns ), "Gene sets not identical"
+
+	# Pull the gene names from the columns
 	gene_names = null.columns
 
-	# Run the DISCERN analysis
-	run_discern( null, cancer, gene_names, 0.05, "DISCERN_BRCA.csv" )
-	run_anova( null, cancer, gene_names, "ANOVA_BRCA.csv" )
-	run_lns( null, cancer, gene_names, "LNS_BRCA.csv" )
-
-def luad_analysis():
-	'''
-	Load up the LUAD data and pass it to the DISCERN methods.
-	'''
-
-	# Load up the data
-	null = pd.read_csv( 'LUAD\luad_data_normal.csv', index_col=0 ).T
-	cancer = pd.read_csv( 'LUAD\luad_data_cancer.csv', index_col=0 ).T
-
-	# Pull the gene names from the columns 
-	gene_names = null.columns
-
-	# Run the DISCERN analysis
-	run_discern( null, cancer, gene_names, 0.05, "DISCERN_LUAD.csv" )
-	run_anova( null, cancer, gene_names, "ANOVA_LUAD.csv" )
-	run_lns( null, cancer, gene_names, "LNS_LUAD.csv" )
+	# Run the various analyses
+	run_discern( null, cancer, gene_names, l, "DISCERN_{}.csv".format( name ) )
+	run_anova( null, cancer, gene_names, "ANOVA_{}.csv".format( name ) )
+	run_lns( null, cancer, gene_names, "LNS_{}.csv".format( name ) )
 
 def run_anova( null, cancer, gene_names, outfile ):
 	'''
@@ -169,22 +142,26 @@ def run_discern( null, cancer, gene_names, lambda_opt, outfile ):
 		cancer_testing, gene_names, n_cores=8, l=lambda_opt )
 	scores.to_csv( outfile )
 
-def survival_expression_comparison( discern=None, anova=None, lns=None, survival=None, name=None ):
+def survival_expression_comparison( discern, anova, lns, survival, name ):
 	'''
 	Compare the DISCERN scores for genes to the p-values obtained by running
 	Cox Proportional Hazards using survival time. Look at the overlap between
 	the identified genes using p-value and enrichment. Also compare LNS and
 	ANOVA scores in the same way, to allow for a proper comparison.
+
+	Pass in the filename where the DISCERN, ANOVA, LNS, and survival scores
+	are. Make sure that DISCERN scores are stored under a column named 'T2',
+	ANOVA scores are stored under a column called 'ANOVA', LNS scores are
+	stored under a column named 'p', and survival p-values are stored under
+	a column named 'p-value' in their respective csv files.
 	'''
 
 	import seaborn as sns
 
-	if name:
-		survival = pd.read_table( "{}\\{}_all_genes_survival.txt".format( 
-			name.upper(), name.lower() ), sep=' ', names=['gene', 'p-value'] )
-		discern = pd.read_csv( "{}\\DISCERN_{}.csv".format( name.upper(), name.upper() ), index_col=0 )
-		anova = pd.read_csv( "{}\\ANOVA_{}.csv".format( name.upper(), name.upper() ), index_col=0 )
-		lns = pd.read_csv( "{}\\LNS_{}.csv".format( name.upper(), name.upper() ), index_col=0 )
+	survival = pd.read_table( survival, sep=' ', names=['gene', 'p-value'] )
+	discern = pd.read_csv( discern, index_col=0 )
+	anova = pd.read_csv( anova, index_col=0 )
+	lns = pd.read_csv( lns, index_col=0 )
 
 	survival_top = set( survival[ survival['p-value'] < 0.05 ].gene ).intersection( set( discern.index ) )
 	discern = discern.sort( 'T2' )
@@ -237,19 +214,20 @@ def survival_expression_comparison( discern=None, anova=None, lns=None, survival
 	plt.savefig( name+"_enrichment_plot.pdf" )
 	plt.clf()
 
-def plot_discern_distributions():
+def plot_discern_distributions( aml, brca, luad ):
 	'''
 	Plot some useful visualizations of the DISCERN scores as a scatter matrix, where
 	the diagonal is the kernel density of the scores, and the off-diagonals are
-	scatter plots comparing two conditions.
+	scatter plots comparing two conditions. Pass in filenames for where the DISCERN
+	scores are stored.
 	'''
 
 	from pandas.tools.plotting import scatter_matrix
 	import seaborn as sns
 
-	AML = pd.read_csv( "AML\\DISCERN_AML.csv", index_col=0 )
-	BRCA = pd.read_csv( "BRCA\\DISCERN_BRCA.csv", index_col=0 )
-	LUAD = pd.read_csv( "LUAD\\DISCERN_LUAD.csv", index_col=0 )
+	AML = pd.read_csv( aml, index_col=0 )
+	BRCA = pd.read_csv( brca, index_col=0 )
+	LUAD = pd.read_csv( luad, index_col=0 )
 	AML['Gene'], BRCA['Gene'], LUAD['Gene'] = AML.index, BRCA.index, LUAD.index
 	AML['AML'], BRCA['BRCA'], LUAD['LUAD'] = np.log10(AML['T2']), np.log10(BRCA['T2']), np.log10(LUAD['T2'])
 	AML, BRCA, LUAD = AML[['Gene', 'AML']], BRCA[['Gene', 'BRCA']], LUAD[['Gene', 'LUAD']]
@@ -263,6 +241,7 @@ def plot_discern_distributions():
 	plt.savefig( 'DISCERN_Scores.pdf' )
 	plt.clf()
 
+	print "TOP 10 GENES SORTED BY EACH METHOD"
 	print "AML"
 	print data.sort( 'AML', ascending=False )[['Gene', 'AML']][:10]
 	print
@@ -271,3 +250,32 @@ def plot_discern_distributions():
 	print
 	print "LUAD"
 	print data.sort( 'LUAD', ascending=False )[['Gene', 'LUAD']][:10]
+
+if __name__ == "__main__":
+	# Define where your AML, BRCA, and LUAD data are. Change these for your
+	# own file system.
+	AML_NORMAL_FILEPATH = "AML\\AML1_normal.csv"
+	AML_CANCER_FILEPATH = "AML\\AML1_cancer.csv"
+	AML_CLINICAL_FILEPATH = "AML\\aml_all_genes_survival.txt"
+
+	BRCA_NORMAL_FILEPATH = "BRCA\\BRCA_data_normal.csv"
+ 	BRCA_CANCER_FILEPATH = "BRCA\\BRCA_data_cancer_RESTRICTED.csv"
+ 	BRCA_CLINICAL_FILEPATH = "BRCA\\brca_all_genes_survival.txt"
+
+	LUAD_NORMAL_FILEPATH = "LUAD\\luad_data_normal.csv"
+	LUAD_CANCER_FILEPATH = "LUAD\\luad_data_cancer.csv"
+	LUAD_CLINICAL_FILEPATH = "LUAD\\luad_all_genes_survival.txt"
+
+	# Now get DISCERN, ANOVA, and LNS scores for these methods
+	analysis( AML_NORMAL_FILEPATH, AML_CANCER_FILEPATH, 0.1, "AML" )
+	analysis( BRCA_NORMAL_FILEPATH, BRCA_CANCER_FILEPATH, 0.05, "BRCA" )
+	analysis( LUAD_NORMAL_FILEPATH, LUAD_CANCER_FILEPATH, 0.05, "LUAD" )
+
+	# Now that we have the scores, do the comparison between survival
+	# data and expression data.
+	survival_expression_comparison( "DISCERN_AML.csv", "ANOVA_AML.csv", "LNS_AML.csv", AML_CLINICAL_FILEPATH, "AML"  )
+	survival_expression_comparison( "DISCERN_BRCA.csv", "ANOVA_BRCA.csv", "LNS_BRCA.csv", BRCA_CLINICAL_FILEPATH, "BRCA"  )
+	survival_expression_comparison( "DISCERN_LUAD.csv", "ANOVA_LUAD.csv", "LNS_LUAD.csv", LUAD_CLINICAL_FILEPATH, "LUAD"  )
+
+	# Now plot distributions of DISCERN scores for all cancer subtypes together.
+	plot_discern_distributions( "DISCERN_AML.csv", "DISCERN_BRCA.csv", "DISCERN_LUAD.csv" )
